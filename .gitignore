@@ -1,0 +1,5 @@
+# Ne jamais commiter les données brutes CSV
+*.csv
+data/
+__pycache__/
+.env

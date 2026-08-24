@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: loyalty_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d loyalty_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# Spark Master
+  spark-master:
+    image: spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+
+  # Spark Worker
+  spark-worker:
+    image: spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    
+  spark-pipeline:
+    build:
+      context: ./spark_app
+    container_name: spark-pipeline
+    volumes:
+      - ${DATA_PATH:-./data}:/opt/spark-data
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - DB_URL=jdbc:postgresql://postgres:5432/loyalty_db
+      - DB_USER=user
+      - DB_PASSWORD=password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      spark-master:
+        condition: service_started
+
+  dashboard:
+    build:
+      context: ./dashboard
+    container_name: dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - DB_URL=postgresql://user:password@postgres:5432/loyalty_db
+    depends_on:
+      spark-pipeline:
+        condition: service_completed_successfully
